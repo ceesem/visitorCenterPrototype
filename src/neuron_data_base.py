@@ -15,6 +15,7 @@ table_columns = [
     "cell_type_pred",
     soma_depth_col,
     valence_col,
+    "num_soma",
 ]
 
 
@@ -193,9 +194,6 @@ class NeuronCardData(object):
             .groupby("pt_root_id")
             .transform("count")["valid"]
         )
-        targ_soma_df.dropna(inplace=True)
-        targ_soma_df["num_soma"] = targ_soma_df["num_soma"].astype(int)
-        targ_soma_df = targ_soma_df.query("num_soma == 1").reset_index(drop=True)
         return targ_soma_df
 
     def _compute_pre_targ_df(self, soma_table, ct_base_df):
@@ -205,16 +203,31 @@ class NeuronCardData(object):
 
         ct_base_columns = ["nucleus_id", ct_col, soma_depth_col, valence_col]
         ct_df = ct_base_df[ct_base_columns].merge(
-            targ_soma_df[["pt_root_id", "id"]], left_on="nucleus_id", right_on="id"
+            targ_soma_df[["pt_root_id", "id", "num_soma"]],
+            left_on="nucleus_id",
+            right_on="id",
         )
+
+        multisoma_ind = ct_df.query("num_soma>1").index
+        ct_df.loc[multisoma_ind, "nucleus_id"] = np.nan
+        ct_df = ct_df.drop_duplicates(subset=["pt_root_id"]).reset_index(drop=True)
 
         pre_targ_df = pre_df.merge(
-            ct_df[["pt_root_id", ct_col, valence_col, soma_depth_col, "nucleus_id"]],
+            ct_df[
+                [
+                    "pt_root_id",
+                    ct_col,
+                    valence_col,
+                    soma_depth_col,
+                    "nucleus_id",
+                    "num_soma",
+                ]
+            ],
             left_on="post_pt_root_id",
             right_on="pt_root_id",
-            how="inner",
+            how="left",
         )
-
+        pre_targ_df["num_soma"].fillna(0, inplace=True)
         pre_targ_df[syn_depth_col] = pre_targ_df["ctr_pt_position"].apply(
             lambda x: x[1] * 4 / 1000
         )
@@ -227,12 +240,13 @@ class NeuronCardData(object):
         return self._pre_targ_df
 
     def synapse_soma_scatterplot(self, valence_colors, xaxis=None, yaxis=None):
+        pre_targ_df = self.pre_targ_df.dropna()
         return go.Scattergl(
-            x=self.pre_targ_df[soma_depth_col],
-            y=self.pre_targ_df[syn_depth_col],
+            x=pre_targ_df[soma_depth_col],
+            y=pre_targ_df[syn_depth_col],
             mode="markers",
             marker=dict(
-                color=val_colors[self.pre_targ_df[valence_col].astype(int)],
+                color=val_colors[pre_targ_df[valence_col].astype(int)],
                 line_width=0,
                 size=5,
                 opacity=0.5,
@@ -243,7 +257,8 @@ class NeuronCardData(object):
 
     @property
     def bar_data(self):
-        return self.pre_targ_df.groupby(ct_col).count()["valid"]
+        pre_targ_df = self.pre_targ_df.dropna()
+        return pre_targ_df.groupby(ct_col).count()["valid"]
 
     def _bar_plot(self, name, indices, color):
         return go.Bar(
@@ -280,6 +295,7 @@ class NeuronCardData(object):
             tab_dat = pre_targ_unique_df[table_columns].sort_values(
                 by="num_syn", ascending=False
             )
+            tab_dat["num_soma"] = tab_dat["num_soma"].astype(int)
             tab_dat["post_pt_root_id"] = tab_dat["post_pt_root_id"].astype(str)
             self._tab_dat = tab_dat
         return self._tab_dat
