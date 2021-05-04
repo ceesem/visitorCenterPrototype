@@ -1,10 +1,8 @@
 import pandas as pd
 import numpy as np
-import pcg_skel
 import datetime
 
 import plotly.graph_objects as go
-from meshparty import meshwork
 from .config import *
 
 table_columns = [
@@ -38,8 +36,6 @@ class NeuronCardData(object):
         self.synapse_table = synapse_table
         self.split_threshold = split_threshold
 
-        self._nrn = None
-        self._vertex_df = None
         self._syn_df = None
         self._pre_targ_df = None
         self._tab_dat = None
@@ -56,82 +52,6 @@ class NeuronCardData(object):
     @property
     def timestamp(self):
         return self._timestamp
-
-    @property
-    def nrn(self):
-        if self._nrn is None:
-            nrn = pcg_skel.pcg_meshwork(
-                self.oid,
-                client=self.client,
-                refine=None,
-                synapses="all",
-                live_query=True,
-                timestamp=self.timestamp,
-                synapse_table=self.synapse_table,
-            )
-            self._nrn = nrn
-        return self._nrn
-
-    @property
-    def vertex_df(self):
-        if self._vertex_df is None:
-            if not self.axon_only:
-                is_axon, q = meshwork.algorithms.split_axon_by_synapses(
-                    self.nrn,
-                    self.nrn.anno.pre_syn.mesh_index,
-                    self.nrn.anno.post_syn.mesh_index,
-                )
-                if q > split_threshold:
-                    df = pd.DataFrame(
-                        {
-                            "x": self.nrn.skeleton.vertices[:, 0] / 1000,
-                            "y": self.nrn.skeleton.vertices[:, 1] / 1000,
-                            "z": self.nrn.skeleton.vertices[:, 2] / 1000,
-                            "is_axon": is_axon.to_skel_mask.astype(int),
-                        }
-                    )
-                else:
-                    df = pd.DataFrame(
-                        {
-                            "x": self.nrn.skeleton.vertices[:, 0] / 1000,
-                            "y": self.nrn.skeleton.vertices[:, 1] / 1000,
-                            "z": self.nrn.skeleton.vertices[:, 2] / 1000,
-                            "is_axon": 1,
-                        }
-                    )
-            else:
-                df = pd.DataFrame(
-                    {
-                        "x": self.nrn.skeleton.vertices[:, 0] / 1000,
-                        "y": self.nrn.skeleton.vertices[:, 1] / 1000,
-                        "z": self.nrn.skeleton.vertices[:, 2] / 1000,
-                        "is_axon": 0,
-                    }
-                )
-            self._vertex_df = df
-        return self._vertex_df
-
-    def _dot_plot(self, color, is_axon, name, xaxis="x", yaxis="y"):
-        dot = go.Scattergl(
-            x=self.vertex_df.query("is_axon == @is_axon")["x"],
-            y=self.vertex_df.query("is_axon == @is_axon")["y"],
-            mode="markers",
-            marker=dict(
-                color=color,
-                line_width=0,
-                size=2.5,
-            ),
-            name=name,
-            xaxis=xaxis,
-            yaxis=yaxis,
-        )
-        return dot
-
-    def axon_dot_plot(self, color, xaxis=None, yaxis=None):
-        return self._dot_plot(color, 1, "Axon", xaxis=xaxis, yaxis=yaxis)
-
-    def dendrite_dot_plot(self, color, xaxis=None, yaxis=None):
-        return self._dot_plot(color, 0, "Dendrite", xaxis=xaxis, yaxis=yaxis)
 
     @property
     def syn_df(self):
