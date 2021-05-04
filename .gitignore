@@ -2,3 +2,6 @@ __pycache__
 .DS_Store
 .ipynb_checkpoints
 
+prototyping.ipynb
+.gitignore
+src/data/minnie_cell_types_model_v83.pkl
