@@ -210,6 +210,9 @@ class NeuronCardData(object):
 
         multisoma_ind = ct_df.query("num_soma>1").index
         ct_df.loc[multisoma_ind, "nucleus_id"] = np.nan
+        ct_df.loc[multisoma_ind, valence_col] = np.nan
+        ct_df.loc[multisoma_ind, ct_col] = np.nan
+        ct_df.loc[multisoma_ind, soma_depth_col] = np.nan
         ct_df = ct_df.drop_duplicates(subset=["pt_root_id"]).reset_index(drop=True)
 
         pre_targ_df = pre_df.merge(
