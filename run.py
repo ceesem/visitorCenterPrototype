@@ -5,4 +5,4 @@ client = FrameworkClient("minnie65_phase3_v1")
 app = generate_app(client, app_type="dash")
 
 if __name__ == "__main__":
-    app.run_server()
+    app.run_server(port=8051)
