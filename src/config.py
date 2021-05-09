@@ -12,19 +12,33 @@ clrs = np.array([axon_color, dendrite_color])
 
 base_dir = os.path.dirname(__file__)
 data_path = f"{base_dir}/data"
-ct_base_filename = f"{data_path}/minnie_cell_types_model_v83.pkl"
-ct_base_df = pd.read_pickle(ct_base_filename)
-ct_base_df["soma_y_um"] = ct_base_df["soma_y"] / 1000
+# ct_base_filename = f"{data_path}/minnie_cell_types_model_v83.pkl"
+# ct_base_df = pd.read_pickle(ct_base_filename)
+# ct_base_df["soma_y_um"] = ct_base_df["soma_y"] / 1000
 
-ct_col = "cell_type_pred"
+cell_type_table = "allen_soma_coarse_cell_class_model_v1"
+ct_col = "cell_type"
+
+own_soma_col = "own_soma_pt_position"
+
 soma_depth_col = "soma_y_um"
 valence_col = "is_inhib"
+num_soma_col = "num_soma"
+soma_position_col = "soma_pt_position"
+soma_dist_col = "soma_distance_um"
+
 syn_depth_col = "syn_y_um"
+num_syn_col = "num_syn"
+net_size_col = "net_syn_size"
+mean_size_col = "mean_syn_size"
+
 soma_table = "nucleus_neuron_svm"
+soma_table_query = "cell_type == 'neuron'"
 
 inhib_types = ["BC", "MC", "BPC", "NGC"]
 exc_types = ["23P", "4P", "5P_IT", "5P_NP", "5P_PT", "6CT", "6IT"]
-ct_base_df[valence_col] = ct_base_df[ct_col].apply(lambda x: x in inhib_types)
+cat_dtype = pd.CategoricalDtype(categories=exc_types + inhib_types, ordered=True)
+# ct_base_df[valence_col] = ct_base_df[ct_col].apply(lambda x: x in inhib_types)
 
 layer_bnds = np.load(f"{data_path}/layer_bounds_v1.npy")
 height_bnds = np.load(f"{data_path}/height_bounds_v1.npy")
@@ -40,3 +54,4 @@ i_color = i_colors[base_ind]
 val_colors = np.array([e_color, i_color])
 
 split_threshold = 0.7
+voxel_resolution = np.array([4, 4, 40])

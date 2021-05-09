@@ -7,7 +7,7 @@ from dash import Dash
 from jupyter_dash import JupyterDash
 
 from .link_utilities import generate_statebuilder, generate_statebuilder_pre
-from .neuron_data_base import NeuronCardData, table_columns
+from .neuron_data_base import NeuronData, table_columns
 from .config import *
 from .plots import *
 
@@ -34,10 +34,6 @@ def generate_app(client, app_type="jupyterdash"):
     """
 
     DashFunc = dash_func_selector[app_type]
-
-    sb = generate_statebuilder(client)
-    sb_pre = generate_statebuilder_pre(client)
-
     header_text = html.H3(f"Neuron Target Info:")
 
     input_row = [
@@ -62,6 +58,7 @@ def generate_app(client, app_type="jupyterdash"):
                         target="_blank",
                         style={"font-size": "24px"},
                     ),
+                    html.Button(id="reset-selection", children="Reset Selection"),
                 ],
                 width=10,
             )
@@ -117,6 +114,13 @@ def generate_app(client, app_type="jupyterdash"):
     )
 
     @app.callback(
+        Output("data-table", "selected_rows"),
+        Input("reset-selection", "n_clicks"),
+    )
+    def reset_selection(n_clicks):
+        return []
+
+    @app.callback(
         Output("response-text", "children"),
         Input("submit-button", "n_clicks"),
         State("root_id", "value"),
@@ -133,14 +137,22 @@ def generate_app(client, app_type="jupyterdash"):
         Output("data-table", "data"),
         Output("target-synapse-json", "data"),
         Output("all-synapse-json", "data"),
+        Output("reset-selection", "n_clicks"),
         Input("submit-button", "n_clicks"),
         State("root_id", "value"),
     )
     def update_data(n_clicks, input_value):
         if len(input_value) == 0:
-            return html.Div("No plots to show yet"), "", [], [], []
+            return (
+                html.Div("No plots to show yet"),
+                "",
+                [],
+                [],
+                [],
+                1,
+            )
         input_root_id = int(input_value)
-        nrn_data = NeuronCardData(input_root_id, client=client)
+        nrn_data = NeuronData(input_root_id, client=client)
         vfig = violin_fig(nrn_data, axon_color, dendrite_color, height=500, width=300)
         sfig = scatter_fig(nrn_data, valence_colors=val_colors, height=500)
         bfig = bar_fig(nrn_data, val_colors, height=500, width=500)
@@ -168,9 +180,10 @@ def generate_app(client, app_type="jupyterdash"):
                 no_gutters=True,
             ),
             f"Data for {input_root_id}",
-            nrn_data.tab_dat.to_dict("records"),
+            nrn_data.pre_tab_dat.to_dict("records"),
             pre_targ_df.to_dict("records"),
             syn_df.to_dict("records"),
+            np.random.randint(1000000),
         )
 
     @app.callback(
@@ -184,11 +197,14 @@ def generate_app(client, app_type="jupyterdash"):
     def update_link(rows, selected_rows, syn_records_all, syn_records_target):
         if rows is None or len(rows) == 0:
             rows = {}
+            sb = generate_statebuilder(client)
             return sb.render_state(None, return_as="url")
         elif len(selected_rows) == 0:
             syn_df = pd.DataFrame(syn_records_all)
             syn_df["pre_pt_root_id"] = syn_df["pre_pt_root_id"].astype(int)
             syn_df["post_pt_root_id"] = syn_df["post_pt_root_id"].astype(int)
+
+            sb_pre = generate_statebuilder_pre(client)
             return sb_pre.render_state(syn_df, return_as="url")
         else:
             dff = pd.DataFrame(rows)
@@ -198,6 +214,12 @@ def generate_app(client, app_type="jupyterdash"):
             pre_targ_df = pd.DataFrame(syn_records_target)
             pre_targ_df["pre_pt_root_id"] = pre_targ_df["pre_pt_root_id"].astype(int)
             pre_targ_df["post_pt_root_id"] = pre_targ_df["post_pt_root_id"].astype(int)
+            preselect = (
+                len(post_oids) == 1
+            )  # Only show all targets if just one is selected
+            sb = generate_statebuilder(
+                client, pre_targ_df["pre_pt_root_id"].iloc[0], preselect_all=preselect
+            )
             return sb.render_state(
                 pre_targ_df.query("post_pt_root_id in @post_oids"), return_as="url"
             )
