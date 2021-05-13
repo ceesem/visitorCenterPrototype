@@ -12,6 +12,7 @@ from .dataframe_utilities import *
 from .config import *
 
 table_columns = [
+    "pre_pt_root_id",
     "post_pt_root_id",
     num_syn_col,
     net_size_col,

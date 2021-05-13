@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 from .config import *
 
 soma_table_columns = [
@@ -22,9 +23,11 @@ synapse_table_columns = [
     syn_depth_col,
 ]
 
+soma_position_cols = [soma_position_col, own_soma_col]
+minimal_synapse_columns = ["pre_pt_root_id", "post_pt_root_id", "ctr_pt_position"]
+
 # Columns that given nan value unless num_soma==1.
 single_soma_cols = [soma_depth_col, soma_position_col, ct_col, valence_col]
-soma_position_cols = [soma_position_col, own_soma_col]
 
 
 def radial_distance(row, colx, coly, voxel_resolution):
@@ -115,3 +118,11 @@ def pre_synapse_df(synapse_table, root_id, client, timestamp):
 
 def post_synapse_df(synapse_table, root_id, client, timestamp):
     return _synapse_df("post", synapse_table, root_id, client, timestamp)
+
+
+def stringify_root_ids(df, stringify_cols=None):
+    if stringify_cols is None:
+        stringify_cols = [col for col in df.columns if re.search("_root_id$", col)]
+    for col in stringify_cols:
+        df[col] = df[col].astype(str)
+    return df

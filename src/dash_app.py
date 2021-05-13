@@ -1,3 +1,4 @@
+from src.dataframe_utilities import stringify_root_ids
 import dash_table
 import dash_core_components as dcc
 import dash_bootstrap_components as dbc
@@ -6,7 +7,13 @@ from dash.dependencies import Input, Output, State
 from dash import Dash
 from jupyter_dash import JupyterDash
 
-from .link_utilities import generate_statebuilder, generate_statebuilder_pre
+from .link_utilities import (
+    generate_statebuilder,
+    generate_statebuilder_pre,
+    generate_statebuilder_post,
+    generate_url_synapses,
+)
+from .dataframe_utilities import minimal_synapse_columns
 from .neuron_data_base import NeuronData, table_columns
 from .config import *
 from .plots import *
@@ -66,34 +73,54 @@ def generate_app(client, app_type="jupyterdash"):
         justify="center",
     )
 
-    data_table = dbc.Row(
+    data_table = html.Div(
         [
-            dbc.Col(
-                dash_table.DataTable(
-                    id="data-table",
-                    columns=[{"name": i, "id": i} for i in table_columns],
-                    data=[],
-                    css=[{"selector": "table", "rule": "table-layout: fixed"}],
-                    style_cell={
-                        "height": "auto",
-                        "width": "20%",
-                        "minWidth": "20%",
-                        "maxWidth": "20%",
-                        "whiteSpace": "normal",
-                    },
-                    sort_action="native",
-                    sort_mode="multi",
-                    filter_action="native",
-                    row_selectable="multi",
-                    page_current=0,
-                    page_action="native",
-                    page_size=50,
-                ),
-                width=10,
+            dcc.Tabs(
+                id="connectivity-tab",
+                value="tab-pre",
+                children=[
+                    dcc.Tab(label="Output", value="tab-pre"),
+                    dcc.Tab(label="Input", value="tab-post"),
+                ],
             ),
-        ],
-        justify="center",
+            html.Div(
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            dash_table.DataTable(
+                                id="data-table",
+                                columns=[{"name": i, "id": i} for i in table_columns],
+                                data=[],
+                                css=[
+                                    {
+                                        "selector": "table",
+                                        "rule": "table-layout: fixed",
+                                    }
+                                ],
+                                style_cell={
+                                    "height": "auto",
+                                    "width": "20%",
+                                    "minWidth": "20%",
+                                    "maxWidth": "20%",
+                                    "whiteSpace": "normal",
+                                },
+                                sort_action="native",
+                                sort_mode="multi",
+                                filter_action="native",
+                                row_selectable="multi",
+                                page_current=0,
+                                page_action="native",
+                                page_size=50,
+                            ),
+                            width=10,
+                        ),
+                    ],
+                    justify="center",
+                )
+            ),
+        ]
     )
+
     external_stylesheets = [dbc.themes.FLATLY]
 
     app = DashFunc(__name__, external_stylesheets=external_stylesheets)
@@ -108,8 +135,10 @@ def generate_app(client, app_type="jupyterdash"):
             html.Hr(),
             top_link,
             data_table,
-            dcc.Store("all-synapse-json"),
             dcc.Store("target-synapse-json"),
+            dcc.Store("source-synapse-json"),
+            dcc.Store("target-table-json"),
+            dcc.Store("source-table-json"),
         ]
     )
 
@@ -134,9 +163,10 @@ def generate_app(client, app_type="jupyterdash"):
     @app.callback(
         Output("plots", "children"),
         Output("plot-response-text", "children"),
-        Output("data-table", "data"),
         Output("target-synapse-json", "data"),
-        Output("all-synapse-json", "data"),
+        Output("source-synapse-json", "data"),
+        Output("target-table-json", "data"),
+        Output("source-table-json", "data"),
         Output("reset-selection", "n_clicks"),
         Input("submit-button", "n_clicks"),
         State("root_id", "value"),
@@ -149,6 +179,7 @@ def generate_app(client, app_type="jupyterdash"):
                 [],
                 [],
                 [],
+                [],
                 1,
             )
         input_root_id = int(input_value)
@@ -157,17 +188,12 @@ def generate_app(client, app_type="jupyterdash"):
         sfig = scatter_fig(nrn_data, valence_colors=val_colors, height=500)
         bfig = bar_fig(nrn_data, val_colors, height=500, width=500)
 
-        pre_targ_df = nrn_data.pre_targ_df()[
-            ["pre_pt_root_id", "post_pt_root_id", "ctr_pt_position"]
-        ]
-        pre_targ_df["post_pt_root_id"] = pre_targ_df["post_pt_root_id"].astype(str)
-        pre_targ_df["pre_pt_root_id"] = pre_targ_df["pre_pt_root_id"].astype(str)
+        pre_targ_df = nrn_data.pre_targ_df()[minimal_synapse_columns]
+        pre_targ_df = stringify_root_ids(pre_targ_df)
 
-        syn_df = nrn_data.syn_df().query('direction == "pre"')[
-            ["pre_pt_root_id", "post_pt_root_id", "ctr_pt_position"]
-        ]
-        syn_df["post_pt_root_id"] = syn_df["post_pt_root_id"].astype(str)
-        syn_df["pre_pt_root_id"] = syn_df["pre_pt_root_id"].astype(str)
+        post_targ_df = nrn_data.post_targ_df()[minimal_synapse_columns]
+        post_targ_df = stringify_root_ids(post_targ_df)
+
         return (
             dbc.Row(
                 [
@@ -180,48 +206,68 @@ def generate_app(client, app_type="jupyterdash"):
                 no_gutters=True,
             ),
             f"Data for {input_root_id}",
-            nrn_data.pre_tab_dat().to_dict("records"),
             pre_targ_df.to_dict("records"),
-            syn_df.to_dict("records"),
+            post_targ_df.to_dict("records"),
+            nrn_data.pre_tab_dat().to_dict("records"),
+            nrn_data.post_tab_dat().to_dict("records"),
             np.random.randint(10_000_000),
         )
 
     @app.callback(
+        Output("data-table", "data"),
+        Input("connectivity-tab", "value"),
+        Input("target-table-json", "data"),
+        Input("source-table-json", "data"),
+    )
+    def update_table(
+        tab_value,
+        pre_data,
+        post_data,
+    ):
+        if tab_value == "tab-pre":
+            return pre_data
+        elif tab_value == "tab-post":
+            return post_data
+        else:
+            return []
+
+    @app.callback(
         Output("ngl_link", "href"),
+        Input("connectivity-tab", "value"),
         Input("data-table", "derived_virtual_data"),
         Input("data-table", "derived_virtual_selected_rows"),
-        Input("all-synapse-json", "data"),
         Input("target-synapse-json", "data"),
-        prevent_initial_call=True,
+        Input("source-synapse-json", "data"),
     )
-    def update_link(rows, selected_rows, syn_records_all, syn_records_target):
-        if rows is None or len(rows) == 0:
-            rows = {}
+    def update_link(
+        tab_value, rows, selected_rows, syn_records_target, syn_records_source
+    ):
+        if len(rows) == 0:
+            syn_df = None
             sb = generate_statebuilder(client)
-            return sb.render_state(None, return_as="url")
+            return sb.render_state(syn_df, return_as="url")
         elif len(selected_rows) == 0:
-            syn_df = pd.DataFrame(syn_records_all)
-            syn_df["pre_pt_root_id"] = syn_df["pre_pt_root_id"].astype(int)
-            syn_df["post_pt_root_id"] = syn_df["post_pt_root_id"].astype(int)
-
-            sb_pre = generate_statebuilder_pre(client)
-            return sb_pre.render_state(syn_df, return_as="url")
+            if tab_value == "tab-pre":
+                syn_df = pd.DataFrame(syn_records_target)
+                syn_df["pre_pt_root_id"] = syn_df["pre_pt_root_id"].astype(int)
+                syn_df["post_pt_root_id"] = syn_df["post_pt_root_id"].astype(int)
+                sb = generate_statebuilder_pre(client)
+                return sb.render_state(syn_df, return_as="url")
+            elif tab_value == "tab-post":
+                syn_df = pd.DataFrame(syn_records_source)
+                syn_df["pre_pt_root_id"] = syn_df["pre_pt_root_id"].astype(int)
+                syn_df["post_pt_root_id"] = syn_df["post_pt_root_id"].astype(int)
+                sb = generate_statebuilder_post(client)
+            return sb.render_state(syn_df, return_as="url")
         else:
             dff = pd.DataFrame(rows)
-            dff["post_pt_root_id"] = dff["post_pt_root_id"].astype(np.int64)
-            post_oids = dff.loc[selected_rows]["post_pt_root_id"].values
-
-            pre_targ_df = pd.DataFrame(syn_records_target)
-            pre_targ_df["pre_pt_root_id"] = pre_targ_df["pre_pt_root_id"].astype(int)
-            pre_targ_df["post_pt_root_id"] = pre_targ_df["post_pt_root_id"].astype(int)
-            preselect = (
-                len(post_oids) == 1
-            )  # Only show all targets if just one is selected
-            sb = generate_statebuilder(
-                client, pre_targ_df["pre_pt_root_id"].iloc[0], preselect_all=preselect
-            )
-            return sb.render_state(
-                pre_targ_df.query("post_pt_root_id in @post_oids"), return_as="url"
-            )
+            if tab_value == "tab-pre":
+                return generate_url_synapses(
+                    selected_rows, dff, pd.DataFrame(syn_records_target), "pre", client
+                )
+            elif tab_value == "tab-post":
+                return generate_url_synapses(
+                    selected_rows, dff, pd.DataFrame(syn_records_source), "post", client
+                )
 
     return app
