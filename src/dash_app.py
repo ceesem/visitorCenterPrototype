@@ -157,13 +157,13 @@ def generate_app(client, app_type="jupyterdash"):
         sfig = scatter_fig(nrn_data, valence_colors=val_colors, height=500)
         bfig = bar_fig(nrn_data, val_colors, height=500, width=500)
 
-        pre_targ_df = nrn_data.pre_targ_df[
+        pre_targ_df = nrn_data.pre_targ_df()[
             ["pre_pt_root_id", "post_pt_root_id", "ctr_pt_position"]
         ]
         pre_targ_df["post_pt_root_id"] = pre_targ_df["post_pt_root_id"].astype(str)
         pre_targ_df["pre_pt_root_id"] = pre_targ_df["pre_pt_root_id"].astype(str)
 
-        syn_df = nrn_data.syn_df.query('direction == "pre"')[
+        syn_df = nrn_data.syn_df().query('direction == "pre"')[
             ["pre_pt_root_id", "post_pt_root_id", "ctr_pt_position"]
         ]
         syn_df["post_pt_root_id"] = syn_df["post_pt_root_id"].astype(str)
@@ -180,10 +180,10 @@ def generate_app(client, app_type="jupyterdash"):
                 no_gutters=True,
             ),
             f"Data for {input_root_id}",
-            nrn_data.pre_tab_dat.to_dict("records"),
+            nrn_data.pre_tab_dat().to_dict("records"),
             pre_targ_df.to_dict("records"),
             syn_df.to_dict("records"),
-            np.random.randint(1000000),
+            np.random.randint(10_000_000),
         )
 
     @app.callback(

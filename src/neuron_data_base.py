@@ -1,6 +1,11 @@
 import pandas as pd
 import numpy as np
 import datetime
+from functools import lru_cache
+
+from typing import *
+from annotationframeworkclient import FrameworkClient
+import datetime
 
 import plotly.graph_objects as go
 from .dataframe_utilities import *
@@ -22,15 +27,15 @@ table_columns = [
 class NeuronData(object):
     def __init__(
         self,
-        oid,
-        client,
-        timestamp=None,
-        axon_only=False,
-        split_threshold=0.7,
-        synapse_table=synapse_table,
-        cell_type_table=cell_type_table,
-        soma_table=soma_table,
-    ):
+        oid: int,
+        client: FrameworkClient,
+        timestamp: Union[datetime.datetime, None] = None,
+        axon_only: bool = False,
+        split_threshold: float = 0.7,
+        synapse_table: str = synapse_table,
+        cell_type_table: str = cell_type_table,
+        soma_table: str = soma_table,
+    ) -> None:
         self._oid = oid
         self._client = client
         if timestamp is None:
@@ -44,53 +49,41 @@ class NeuronData(object):
 
         self.split_threshold = split_threshold
 
-        self._soma_location = None
-        self._pre_syn_df = None
-        self._post_syn_df = None
-        self._pre_targ_df = None
-        self._post_targ_df = None
-        self._pre_tab_dat = None
-        self._post_tab_dat = None
-
     @property
-    def oid(self):
+    def oid(self) -> int:
         return self._oid
 
     @property
-    def client(self):
+    def client(self) -> FrameworkClient:
         return self._client
 
     @property
-    def timestamp(self):
+    def timestamp(self) -> datetime.datetime:
         return self._timestamp
 
-    @property
-    def pre_syn_df(self):
-        if self._pre_syn_df is None:
-            self._pre_syn_df = pre_synapse_df(
-                self.synapse_table,
-                self.oid,
-                self.client,
-                self.timestamp,
-            )
-        return self._pre_syn_df
+    @lru_cache
+    def pre_syn_df(self) -> pd.DataFrame:
+        return pre_synapse_df(
+            self.synapse_table,
+            self.oid,
+            self.client,
+            self.timestamp,
+        )
 
-    @property
-    def post_syn_df(self):
-        if self._post_syn_df is None:
-            self._post_syn_df = post_synapse_df(
-                self.synapse_table,
-                self.oid,
-                self.client,
-                self.timestamp,
-            )
-        return self._post_syn_df
+    @lru_cache
+    def post_syn_df(self) -> pd.DataFrame:
+        return post_synapse_df(
+            self.synapse_table,
+            self.oid,
+            self.client,
+            self.timestamp,
+        )
 
-    @property
-    def syn_df(self):
-        pre_df = self.pre_syn_df
+    @lru_cache
+    def syn_df(self) -> pd.DataFrame:
+        pre_df = self.pre_syn_df()
         pre_df["direction"] = "pre"
-        post_df = self.post_syn_df
+        post_df = self.post_syn_df()
         post_df["direction"] = "post"
         syn_df = pd.concat([pre_df, post_df])
         syn_df["x"] = 0
@@ -98,8 +91,8 @@ class NeuronData(object):
 
     def _violin_plot(self, direction, name, side, color, xaxis, yaxis):
         return go.Violin(
-            x=self.syn_df.query("direction == @direction")["x"],
-            y=self.syn_df.query("direction == @direction")[syn_depth_col],
+            x=self.syn_df().query("direction == @direction")["x"],
+            y=self.syn_df().query("direction == @direction")[syn_depth_col],
             side=side,
             scalegroup="syn",
             name=name,
@@ -110,12 +103,22 @@ class NeuronData(object):
             yaxis=yaxis,
         )
 
-    def post_violin_plot(self, color, xaxis=None, yaxis=None):
+    def post_violin_plot(
+        self,
+        color: Iterable[float],
+        xaxis: Union[str, None] = None,
+        yaxis: Union[str, None] = None,
+    ) -> go.Violin:
         return self._violin_plot(
             "post", "Post", "negative", color, xaxis=xaxis, yaxis=yaxis
         )
 
-    def pre_violin_plot(self, color, xaxis=None, yaxis=None):
+    def pre_violin_plot(
+        self,
+        color: Iterable[float],
+        xaxis: Union[str, None] = None,
+        yaxis: Union[str, None] = None,
+    ) -> go.Violin:
         return self._violin_plot(
             "pre", "Post", "positive", color, xaxis=xaxis, yaxis=yaxis
         )
@@ -130,14 +133,12 @@ class NeuronData(object):
             own_soma_loc = own_soma_df["pt_position"].values[0]
         return own_soma_loc
 
-    @property
-    def soma_location(self):
-        if self._soma_location is None:
-            self._soma_location = self._get_own_soma_loc()
-        return np.array(self._soma_location)
+    @lru_cache
+    def soma_location(self) -> np.ndarray:
+        return np.array(self._get_own_soma_loc())
 
-    def soma_location_list(self, length):
-        return np.repeat(np.atleast_2d(self.soma_location), length, axis=0).tolist()
+    def soma_location_list(self, length: int) -> list:
+        return np.repeat(np.atleast_2d(self.soma_location()), length, axis=0).tolist()
 
     def _get_ct_soma_df(self, target_ids):
         targ_ct_soma_df = cell_typed_soma_df(
@@ -150,7 +151,7 @@ class NeuronData(object):
         return targ_ct_soma_df
 
     def _compute_pre_targ_df(self):
-        pre_df = self.pre_syn_df
+        pre_df = self.pre_syn_df()
         target_ids = np.unique(pre_df["post_pt_root_id"])
         targ_soma_df = self._get_ct_soma_df(target_ids)
 
@@ -172,14 +173,12 @@ class NeuronData(object):
         )
         return pre_targ_df
 
-    @property
-    def pre_targ_df(self):
-        if self._pre_targ_df is None:
-            self._pre_targ_df = self._compute_pre_targ_df().fillna(np.nan)
-        return self._pre_targ_df
+    @lru_cache
+    def pre_targ_df(self) -> pd.DataFrame:
+        return self._compute_pre_targ_df().fillna(np.nan)
 
     def _compute_post_targ_df(self):
-        post_df = self.post_syn_df
+        post_df = self.post_syn_df()
         target_ids = np.unique(post_df["pre_pt_root_id"])
         targ_soma_df = self._get_ct_soma_df(target_ids)
 
@@ -200,20 +199,23 @@ class NeuronData(object):
         )
         return post_targ_df
 
-    @property
-    def post_targ_df(self):
-        if self._post_targ_df is None:
-            self._post_targ_df = self._compute_post_targ_df().fillna(np.nan)
-        return self._post_targ_df
+    @lru_cache
+    def post_targ_df(self) -> pd.DataFrame:
+        return self._compute_post_targ_df().fillna(np.nan)
 
-    def synapse_soma_scatterplot(self, valence_colors, xaxis=None, yaxis=None):
-        pre_targ_df = self.pre_targ_df.dropna()
+    def synapse_soma_scatterplot(
+        self,
+        valence_colors: dict,
+        xaxis: Union[str, None] = None,
+        yaxis: Union[str, None] = None,
+    ) -> go.Scattergl:
+        pre_targ_df = self.pre_targ_df().dropna()
         return go.Scattergl(
             x=pre_targ_df[soma_depth_col],
             y=pre_targ_df[syn_depth_col],
             mode="markers",
             marker=dict(
-                color=val_colors[pre_targ_df[valence_col].astype(int)],
+                color=valence_colors[pre_targ_df[valence_col].astype(int)],
                 line_width=0,
                 size=5,
                 opacity=0.5,
@@ -222,36 +224,35 @@ class NeuronData(object):
             yaxis=yaxis,
         )
 
-    @property
-    def bar_data(self):
-        pre_targ_df = self.pre_targ_df.dropna()
+    def bar_data(self) -> pd.Series:
+        pre_targ_df = self.pre_targ_df().dropna()
         return pre_targ_df.groupby(ct_col).count()["size"]
 
     def _bar_plot(self, name, indices, color):
         return go.Bar(
             name=name,
-            y=self.bar_data.loc[indices].index,
-            x=self.bar_data.loc[indices].values,
+            y=self.bar_data().loc[indices].index,
+            x=self.bar_data().loc[indices].values,
             marker_color=f"rgb{color}",
             orientation="h",
         )
 
-    def excitatory_bar_plot(self, color):
+    def excitatory_bar_plot(self, color: Iterable[float]) -> go.Bar:
         return self._bar_plot(
             "Exc. Targets", exc_types, tuple(np.floor(255 * color).astype(int))
         )
 
-    def inhib_bar_plot(self, color):
+    def inhib_bar_plot(self, color: Iterable[float]) -> go.Bar:
         return self._bar_plot(
             "Inh. Targets", inhib_types, tuple(np.floor(255 * color).astype(int))
         )
 
     def _compute_tab_dat(self, direction):
         if direction == "pre":
-            df = self.pre_targ_df
+            df = self.pre_targ_df()
             merge_column = "post_pt_root_id"
         elif direction == "post":
-            df = self.post_targ_df
+            df = self.post_targ_df()
             merge_column = "pre_pt_root_id"
         df[num_syn_col] = df.groupby(merge_column).transform("count")["ctr_pt_position"]
         df[net_size_col] = (
@@ -269,14 +270,10 @@ class NeuronData(object):
         )  # Dash can't handle int64
         return tab_dat
 
-    @property
-    def pre_tab_dat(self):
-        if self._pre_tab_dat is None:
-            self._pre_tab_dat = self._compute_tab_dat("pre").fillna(np.nan)
-        return self._pre_tab_dat
+    @lru_cache
+    def pre_tab_dat(self) -> pd.DataFrame:
+        return self._compute_tab_dat("pre").fillna(np.nan)
 
-    @property
-    def post_tab_dat(self):
-        if self._post_tab_dat is None:
-            self._post_tab_dat = self._compute_tab_dat("post").fillna(np.nan)
-        return self._post_tab_dat
+    @lru_cache
+    def post_tab_dat(self) -> pd.DataFrame:
+        return self._compute_tab_dat("post").fillna(np.nan)
