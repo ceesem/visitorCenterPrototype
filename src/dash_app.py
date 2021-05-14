@@ -70,7 +70,7 @@ def generate_app(client, app_type="jupyterdash"):
             ),
             dbc.Col(
                 html.Button(id="reset-selection", children="Reset Selection"),
-                width={"size": 2, "offset": 3},
+                width={"size": 2, "offset": 0},
             ),
         ],
         justify="left",
