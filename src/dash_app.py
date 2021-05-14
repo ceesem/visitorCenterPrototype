@@ -63,14 +63,17 @@ def generate_app(client, app_type="jupyterdash"):
                         id="ngl_link",
                         href="",
                         target="_blank",
-                        style={"font-size": "24px"},
+                        style={"font-size": "20px"},
                     ),
-                    html.Button(id="reset-selection", children="Reset Selection"),
                 ],
-                width=10,
-            )
+                width={"size": 2, "offset": 1},
+            ),
+            dbc.Col(
+                html.Button(id="reset-selection", children="Reset Selection"),
+                width={"size": 2, "offset": 3},
+            ),
         ],
-        justify="center",
+        justify="left",
     )
 
     data_table = html.Div(
@@ -79,8 +82,8 @@ def generate_app(client, app_type="jupyterdash"):
                 id="connectivity-tab",
                 value="tab-pre",
                 children=[
-                    dcc.Tab(label="Output", value="tab-pre"),
-                    dcc.Tab(label="Input", value="tab-post"),
+                    dcc.Tab(id="output-tab", label="Output", value="tab-pre"),
+                    dcc.Tab(id="input-tab", label="Input", value="tab-post"),
                 ],
             ),
             html.Div(
@@ -145,8 +148,9 @@ def generate_app(client, app_type="jupyterdash"):
     @app.callback(
         Output("data-table", "selected_rows"),
         Input("reset-selection", "n_clicks"),
+        Input("connectivity-tab", "value"),
     )
-    def reset_selection(n_clicks):
+    def reset_selection(n_clicks, tab_value):
         return []
 
     @app.callback(
@@ -167,6 +171,8 @@ def generate_app(client, app_type="jupyterdash"):
         Output("source-synapse-json", "data"),
         Output("target-table-json", "data"),
         Output("source-table-json", "data"),
+        Output("output-tab", "label"),
+        Output("input-tab", "label"),
         Output("reset-selection", "n_clicks"),
         Input("submit-button", "n_clicks"),
         State("root_id", "value"),
@@ -180,6 +186,8 @@ def generate_app(client, app_type="jupyterdash"):
                 [],
                 [],
                 [],
+                "Output",
+                "Input",
                 1,
             )
         input_root_id = int(input_value)
@@ -210,6 +218,8 @@ def generate_app(client, app_type="jupyterdash"):
             post_targ_df.to_dict("records"),
             nrn_data.pre_tab_dat().to_dict("records"),
             nrn_data.post_tab_dat().to_dict("records"),
+            f"Output (n = {pre_targ_df.shape[0]})",
+            f"Input (n = {post_targ_df.shape[0]})",
             np.random.randint(10_000_000),
         )
 
@@ -242,10 +252,10 @@ def generate_app(client, app_type="jupyterdash"):
     def update_link(
         tab_value, rows, selected_rows, syn_records_target, syn_records_source
     ):
-        if len(rows) == 0:
-            syn_df = None
+        if rows is None or len(rows) == 0:
+            rows = {}
             sb = generate_statebuilder(client)
-            return sb.render_state(syn_df, return_as="url")
+            return sb.render_state(None, return_as="url")
         elif len(selected_rows) == 0:
             if tab_value == "tab-pre":
                 syn_df = pd.DataFrame(syn_records_target)

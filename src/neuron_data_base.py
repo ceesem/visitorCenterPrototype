@@ -12,8 +12,7 @@ from .dataframe_utilities import *
 from .config import *
 
 table_columns = [
-    "pre_pt_root_id",
-    "post_pt_root_id",
+    "pt_root_id",
     num_syn_col,
     net_size_col,
     mean_size_col,
@@ -273,8 +272,18 @@ class NeuronData(object):
 
     @lru_cache
     def pre_tab_dat(self) -> pd.DataFrame:
-        return self._compute_tab_dat("pre").fillna(np.nan)
+        return (
+            self._compute_tab_dat("pre")
+            .fillna(np.nan)
+            .drop(columns=["pre_pt_root_id"])
+            .rename(columns={"post_pt_root_id": "pt_root_id"})
+        )
 
     @lru_cache
     def post_tab_dat(self) -> pd.DataFrame:
-        return self._compute_tab_dat("post").fillna(np.nan)
+        return (
+            self._compute_tab_dat("post")
+            .fillna(np.nan)
+            .drop(columns=["post_pt_root_id"])
+            .rename(columns={"pre_pt_root_id": "pt_root_id"})
+        )
