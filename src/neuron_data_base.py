@@ -46,8 +46,9 @@ class NeuronData(object):
         self.synapse_table = synapse_table
         self.soma_table = soma_table
         self.cell_type_table = cell_type_table
-
         self.split_threshold = split_threshold
+        self._post_syn_df = None
+        self._pre_syn_df = None
 
     @property
     def oid(self) -> int:
@@ -61,22 +62,19 @@ class NeuronData(object):
     def timestamp(self) -> datetime.datetime:
         return self._timestamp
 
-    @lru_cache
     def pre_syn_df(self) -> pd.DataFrame:
-        return pre_synapse_df(
-            self.synapse_table,
-            self.oid,
-            self.client,
-            self.timestamp,
-        )
+        if self._pre_syn_df is None:
+            self._get_syn_df()
+        return self._pre_syn_df
 
-    @lru_cache
     def post_syn_df(self) -> pd.DataFrame:
-        return post_synapse_df(
-            self.synapse_table,
-            self.oid,
-            self.client,
-            self.timestamp,
+        if self._post_syn_df is None:
+            self._get_syn_df()
+        return self._post_syn_df
+
+    def _get_syn_df(self):
+        self._pre_syn_df, self._post_syn_df = synapse_data(
+            self.synapse_table, self.oid, self.client, self.timestamp
         )
 
     @lru_cache

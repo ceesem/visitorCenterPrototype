@@ -3,6 +3,8 @@ import pandas as pd
 import re
 import numpy as np
 from .config import *
+import copy
+
 
 soma_table_columns = [
     "pt_root_id",
@@ -74,7 +76,11 @@ def get_soma_df(soma_table, root_ids, client, timestamp):
         .transform("count")["valid"]
     )
 
-    soma_df["pt_position"] = soma_df.apply(assemble_pt_position, axis=1)
+    if len(soma_df) == 0:
+        soma_df["pt_position"] = []
+    else:
+        soma_df["pt_position"] = soma_df.apply(assemble_pt_position, axis=1).values
+
     soma_df.rename(columns={"pt_position": soma_position_col}, inplace=True)
     soma_df[soma_depth_col] = soma_df[soma_position_col].apply(
         lambda x: voxel_resolution[1] * x[1] / 1000
@@ -89,18 +95,44 @@ def get_ct_df(cell_type_table, root_ids, client, timestamp):
         timestamp=timestamp,
         split_positions=True,
     )
-    ct_df["pt_position"] = ct_df.apply(assemble_pt_position, axis=1)
+    if len(ct_df) == 0:
+        ct_df["pt_position"] = []
+    else:
+        ct_df["pt_position"] = ct_df.apply(assemble_pt_position, axis=1).values
     ct_df[valence_col] = ct_df[ct_col].apply(lambda x: x in inhib_types)
     ct_df[ct_col] = ct_df[ct_col].astype(cat_dtype)
     ct_df.drop_duplicates(subset="pt_root_id", inplace=True)
     return ct_df[cell_type_table_columns]
 
 
+def _multirun_get_ct_soma(
+    soma_table, cell_type_table, root_ids, client, timestamp, n_split=None
+):
+    if n_split is None:
+        n_split = min(max(len(root_ids) // TARGET_ROOT_ID_PER_CALL, 1), MAX_CHUNKS)
+    root_ids_split = np.array_split(root_ids, n_split)
+    out_soma = []
+    out_ct = []
+    with ThreadPoolExecutor(max_workers=(2 * n_split)) as exe:
+        out_soma = [
+            exe.submit(get_soma_df, soma_table, rid, copy.deepcopy(client), timestamp)
+            for rid in root_ids_split
+        ]
+        out_ct = [
+            exe.submit(
+                get_ct_df, cell_type_table, rid, copy.deepcopy(client), timestamp
+            )
+            for rid in root_ids_split
+        ]
+    soma_df = pd.concat([out.result() for out in out_soma])
+    ct_df = pd.concat([out.result() for out in out_ct])
+    return soma_df, ct_df
+
+
 def cell_typed_soma_df(soma_table, cell_type_table, root_ids, client, timestamp):
-    with ThreadPoolExecutor(max_workers=2) as exe:
-        out1 = exe.submit(get_soma_df, soma_table, root_ids, client, timestamp)
-        out2 = exe.submit(get_ct_df, cell_type_table, root_ids, client, timestamp)
-    soma_df, ct_df = out1.result(), out2.result()
+    soma_df, ct_df = _multirun_get_ct_soma(
+        soma_table, cell_type_table, root_ids, client, timestamp
+    )
 
     soma_ct_df = ct_df.merge(
         soma_df.drop_duplicates(subset="pt_root_id"), on="pt_root_id"
@@ -140,6 +172,17 @@ def pre_synapse_df(synapse_table, root_id, client, timestamp):
 
 def post_synapse_df(synapse_table, root_id, client, timestamp):
     return _synapse_df("post", synapse_table, root_id, client, timestamp)
+
+
+def synapse_data(synapse_table, root_id, client, timestamp):
+    with ThreadPoolExecutor(2) as exe:
+        pre = exe.submit(
+            pre_synapse_df, synapse_table, root_id, copy.deepcopy(client), timestamp
+        )
+        post = exe.submit(
+            post_synapse_df, synapse_table, root_id, copy.deepcopy(client), timestamp
+        )
+    return pre.result(), post.result()
 
 
 def stringify_root_ids(df, stringify_cols=None):

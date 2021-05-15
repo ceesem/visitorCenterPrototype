@@ -5,6 +5,7 @@ import dash_bootstrap_components as dbc
 import dash_html_components as html
 from dash.dependencies import Input, Output, State
 from dash import Dash
+import copy
 from jupyter_dash import JupyterDash
 
 from .link_utilities import (
@@ -191,7 +192,7 @@ def generate_app(client, app_type="jupyterdash"):
                 1,
             )
         input_root_id = int(input_value)
-        nrn_data = NeuronData(input_root_id, client=client)
+        nrn_data = NeuronData(input_root_id, client=copy.deepcopy(client))
         vfig = violin_fig(nrn_data, axon_color, dendrite_color, height=500, width=300)
         sfig = scatter_fig(nrn_data, valence_colors=val_colors, height=500)
         bfig = bar_fig(nrn_data, val_colors, height=500, width=500)

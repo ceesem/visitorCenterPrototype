@@ -2,7 +2,10 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 import os
-from pathlib import Path
+
+
+TARGET_ROOT_ID_PER_CALL = 200
+MAX_CHUNKS = 20
 
 synapse_table = "synapses_pni_2"
 
@@ -12,9 +15,6 @@ clrs = np.array([axon_color, dendrite_color])
 
 base_dir = os.path.dirname(__file__)
 data_path = f"{base_dir}/data"
-# ct_base_filename = f"{data_path}/minnie_cell_types_model_v83.pkl"
-# ct_base_df = pd.read_pickle(ct_base_filename)
-# ct_base_df["soma_y_um"] = ct_base_df["soma_y"] / 1000
 
 cell_type_table = "allen_soma_coarse_cell_class_model_v1"
 ct_col = "cell_type"
@@ -38,7 +38,6 @@ soma_table_query = "cell_type == 'neuron'"
 inhib_types = ["BC", "MC", "BPC", "NGC"]
 exc_types = ["23P", "4P", "5P_IT", "5P_NP", "5P_PT", "6CT", "6IT"]
 cat_dtype = pd.CategoricalDtype(categories=exc_types + inhib_types, ordered=True)
-# ct_base_df[valence_col] = ct_base_df[ct_col].apply(lambda x: x in inhib_types)
 
 layer_bnds = np.load(f"{data_path}/layer_bounds_v1.npy")
 height_bnds = np.load(f"{data_path}/height_bounds_v1.npy")
