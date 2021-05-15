@@ -5,7 +5,7 @@ import os
 
 
 TARGET_ROOT_ID_PER_CALL = 200
-MAX_CHUNKS = 20
+MAX_CHUNKS = 15
 
 synapse_table = "synapses_pni_2"
 

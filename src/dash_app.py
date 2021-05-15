@@ -24,6 +24,12 @@ dash_func_selector = {
     "dash": Dash,
 }
 
+try:
+    from loguru import logger
+    import time
+except:
+    logger = None
+
 
 def generate_app(client, app_type="jupyterdash"):
     """Generate a viewer app
@@ -179,6 +185,9 @@ def generate_app(client, app_type="jupyterdash"):
         State("root_id", "value"),
     )
     def update_data(n_clicks, input_value):
+        if logger is not None:
+            t0 = time.time()
+
         if len(input_value) == 0:
             return (
                 html.Div("No plots to show yet"),
@@ -202,6 +211,13 @@ def generate_app(client, app_type="jupyterdash"):
 
         post_targ_df = nrn_data.post_targ_df()[minimal_synapse_columns]
         post_targ_df = stringify_root_ids(post_targ_df)
+        if logger is not None:
+            logger.info(
+                f"Data update for {input_root_id} | time:{time.time() - t0:.2f} s, syn_in: {len(pre_targ_df)} , syn_out: {len(post_targ_df)}"
+            )
+        pre_tab_records = nrn_data.pre_tab_dat().to_dict("records")
+        post_tab_records = nrn_data.post_tab_dat().to_dict("records")
+        del nrn_data
 
         return (
             dbc.Row(
@@ -217,8 +233,8 @@ def generate_app(client, app_type="jupyterdash"):
             f"Data for {input_root_id}",
             pre_targ_df.to_dict("records"),
             post_targ_df.to_dict("records"),
-            nrn_data.pre_tab_dat().to_dict("records"),
-            nrn_data.post_tab_dat().to_dict("records"),
+            pre_tab_records,
+            post_tab_records,
             f"Output (n = {pre_targ_df.shape[0]})",
             f"Input (n = {post_targ_df.shape[0]})",
             np.random.randint(10_000_000),

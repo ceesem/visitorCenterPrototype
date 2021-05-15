@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import datetime
 from functools import lru_cache
-
+import copy
 from typing import *
 from annotationframeworkclient import FrameworkClient
 import datetime
@@ -37,7 +37,7 @@ class NeuronData(object):
         soma_table: str = soma_table,
     ) -> None:
         self._oid = oid
-        self._client = client
+        self._client = copy.deepcopy(client)
         if timestamp is None:
             timestamp = datetime.datetime.now()
         self._timestamp = timestamp
