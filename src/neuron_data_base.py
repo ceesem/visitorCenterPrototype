@@ -150,10 +150,18 @@ class NeuronData(object):
         )
         return targ_ct_soma_df
 
+    def _target_ids(self):
+        pre_oids = self.pre_syn_df()["post_pt_root_id"]
+        post_oids = self.post_syn_df()["pre_pt_root_id"]
+        return np.unique(np.concatenate([pre_oids, post_oids]))
+
+    @lru_cache
+    def targ_soma_df(self):
+        return self._get_ct_soma_df(self._target_ids())
+
     def _compute_pre_targ_df(self):
         pre_df = self.pre_syn_df()
-        target_ids = np.unique(pre_df["post_pt_root_id"])
-        targ_soma_df = self._get_ct_soma_df(target_ids)
+        targ_soma_df = self.targ_soma_df()
 
         pre_targ_df = pre_df.merge(
             targ_soma_df,
@@ -179,8 +187,7 @@ class NeuronData(object):
 
     def _compute_post_targ_df(self):
         post_df = self.post_syn_df()
-        target_ids = np.unique(post_df["pre_pt_root_id"])
-        targ_soma_df = self._get_ct_soma_df(target_ids)
+        targ_soma_df = self.targ_soma_df()
 
         post_targ_df = post_df.merge(
             targ_soma_df,

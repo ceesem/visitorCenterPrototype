@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import re
 import numpy as np
@@ -96,8 +97,11 @@ def get_ct_df(cell_type_table, root_ids, client, timestamp):
 
 
 def cell_typed_soma_df(soma_table, cell_type_table, root_ids, client, timestamp):
-    soma_df = get_soma_df(soma_table, root_ids, client, timestamp)
-    ct_df = get_ct_df(cell_type_table, root_ids, client, timestamp)
+    with ThreadPoolExecutor(max_workers=2) as exe:
+        out1 = exe.submit(get_soma_df, soma_table, root_ids, client, timestamp)
+        out2 = exe.submit(get_ct_df, cell_type_table, root_ids, client, timestamp)
+    soma_df, ct_df = out1.result(), out2.result()
+
     soma_ct_df = ct_df.merge(
         soma_df.drop_duplicates(subset="pt_root_id"), on="pt_root_id"
     )
