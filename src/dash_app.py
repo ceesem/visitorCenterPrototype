@@ -201,7 +201,7 @@ def generate_app(client, app_type="jupyterdash"):
                 1,
             )
         input_root_id = int(input_value)
-        nrn_data = NeuronData(input_root_id, client=copy.deepcopy(client))
+        nrn_data = NeuronData(input_root_id, client=client)
         vfig = violin_fig(nrn_data, axon_color, dendrite_color, height=500, width=300)
         sfig = scatter_fig(nrn_data, valence_colors=val_colors, height=500)
         bfig = bar_fig(nrn_data, val_colors, height=500, width=500)
@@ -217,7 +217,6 @@ def generate_app(client, app_type="jupyterdash"):
             )
         pre_tab_records = nrn_data.pre_tab_dat().to_dict("records")
         post_tab_records = nrn_data.post_tab_dat().to_dict("records")
-        del nrn_data
 
         return (
             dbc.Row(

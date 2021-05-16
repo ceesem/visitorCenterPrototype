@@ -3,7 +3,6 @@ import pandas as pd
 import re
 import numpy as np
 from .config import *
-import copy
 
 
 soma_table_columns = [
@@ -115,17 +114,21 @@ def _multirun_get_ct_soma(
     out_ct = []
     with ThreadPoolExecutor(max_workers=(2 * n_split)) as exe:
         out_soma = [
-            exe.submit(get_soma_df, soma_table, rid, copy.deepcopy(client), timestamp)
+            exe.submit(get_soma_df, soma_table, rid, client, timestamp)
             for rid in root_ids_split
         ]
         out_ct = [
-            exe.submit(
-                get_ct_df, cell_type_table, rid, copy.deepcopy(client), timestamp
-            )
+            exe.submit(get_ct_df, cell_type_table, rid, client, timestamp)
             for rid in root_ids_split
         ]
+
     soma_df = pd.concat([out.result() for out in out_soma])
     ct_df = pd.concat([out.result() for out in out_ct])
+
+    client.materialize.session.close()
+    client.materialize.cg_client.session.close()
+    client.chunkedgraph.session.close()
+
     return soma_df, ct_df
 
 
@@ -176,12 +179,8 @@ def post_synapse_df(synapse_table, root_id, client, timestamp):
 
 def synapse_data(synapse_table, root_id, client, timestamp):
     with ThreadPoolExecutor(2) as exe:
-        pre = exe.submit(
-            pre_synapse_df, synapse_table, root_id, copy.deepcopy(client), timestamp
-        )
-        post = exe.submit(
-            post_synapse_df, synapse_table, root_id, copy.deepcopy(client), timestamp
-        )
+        pre = exe.submit(pre_synapse_df, synapse_table, root_id, client, timestamp)
+        post = exe.submit(post_synapse_df, synapse_table, root_id, client, timestamp)
     return pre.result(), post.result()
 
 
