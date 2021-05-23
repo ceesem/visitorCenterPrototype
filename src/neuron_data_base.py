@@ -35,11 +35,16 @@ class NeuronData(object):
         synapse_table: str = synapse_table,
         cell_type_table: str = cell_type_table,
         soma_table: str = soma_table,
+        live_query: bool = True,
     ) -> None:
         self._oid = oid
         self._client = patch_client(client)
+
+        self._live_query = live_query
+
         if timestamp is None:
             timestamp = datetime.datetime.now()
+
         self._timestamp = timestamp
         self.axon_only = axon_only
 
@@ -62,6 +67,10 @@ class NeuronData(object):
     def timestamp(self) -> datetime.datetime:
         return self._timestamp
 
+    @property
+    def live_query(self) -> bool:
+        return self._live_query
+
     def pre_syn_df(self) -> pd.DataFrame:
         if self._pre_syn_df is None:
             self._get_syn_df()
@@ -77,7 +86,7 @@ class NeuronData(object):
             self.synapse_table, self.oid, self.client, self.timestamp
         )
 
-    @lru_cache
+    @lru_cache(maxsize=5)
     def syn_df(self) -> pd.DataFrame:
         pre_df = self.pre_syn_df()
         pre_df["direction"] = "pre"
@@ -131,7 +140,7 @@ class NeuronData(object):
             own_soma_loc = own_soma_df["pt_position"].values[0]
         return own_soma_loc
 
-    @lru_cache
+    @lru_cache(maxsize=5)
     def soma_location(self) -> np.ndarray:
         return np.array(self._get_own_soma_loc())
 
@@ -153,7 +162,7 @@ class NeuronData(object):
         post_oids = self.post_syn_df()["pre_pt_root_id"]
         return np.unique(np.concatenate([pre_oids, post_oids]))
 
-    @lru_cache
+    @lru_cache(maxsize=5)
     def targ_soma_df(self):
         return self._get_ct_soma_df(self._target_ids())
 
@@ -171,15 +180,18 @@ class NeuronData(object):
         pre_targ_df[num_soma_col] = pre_targ_df[num_soma_col].astype(int)
 
         pre_targ_df[own_soma_col] = self.soma_location_list(len(pre_targ_df))
-        pre_targ_df[soma_dist_col] = pre_targ_df.apply(
-            lambda x: radial_distance(
-                x, soma_position_col, own_soma_col, voxel_resolution
-            ),
-            axis=1,
-        )
+        if len(pre_targ_df) == 0:
+            pre_targ_df[soma_dist_col] = []
+        else:
+            pre_targ_df[soma_dist_col] = pre_targ_df.apply(
+                lambda x: radial_distance(
+                    x, soma_position_col, own_soma_col, voxel_resolution
+                ),
+                axis=1,
+            )
         return pre_targ_df
 
-    @lru_cache
+    @lru_cache(maxsize=5)
     def pre_targ_df(self) -> pd.DataFrame:
         return self._compute_pre_targ_df().fillna(np.nan)
 
@@ -196,15 +208,18 @@ class NeuronData(object):
         post_targ_df[num_soma_col].fillna(0, inplace=True)
         post_targ_df[num_soma_col] = post_targ_df[num_soma_col].astype(int)
         post_targ_df[own_soma_col] = self.soma_location_list(len(post_targ_df))
-        post_targ_df[soma_dist_col] = post_targ_df.apply(
-            lambda x: radial_distance(
-                x, soma_position_col, own_soma_col, voxel_resolution
-            ),
-            axis=1,
-        )
+        if len(post_targ_df) == 0:
+            post_targ_df[soma_dist_col] = []
+        else:
+            post_targ_df[soma_dist_col] = post_targ_df.apply(
+                lambda x: radial_distance(
+                    x, soma_position_col, own_soma_col, voxel_resolution
+                ),
+                axis=1,
+            )
         return post_targ_df
 
-    @lru_cache
+    @lru_cache(maxsize=5)
     def post_targ_df(self) -> pd.DataFrame:
         return self._compute_post_targ_df().fillna(np.nan)
 
@@ -259,13 +274,24 @@ class NeuronData(object):
         elif direction == "post":
             df = self.post_targ_df()
             merge_column = "pre_pt_root_id"
-        df[num_syn_col] = df.groupby(merge_column).transform("count")["ctr_pt_position"]
-        df[net_size_col] = (
-            df[[merge_column, "size"]].groupby(merge_column).transform("sum")["size"]
-        )
-        df[mean_size_col] = (
-            df[[merge_column, "size"]].groupby(merge_column).transform("mean")["size"]
-        ).astype(int)
+        if len(df) == 0:
+            df[num_syn_col] = []
+            df[net_size_col] = []
+            df[mean_size_col] = []
+        else:
+            df[num_syn_col] = df.groupby(merge_column).transform("count")[
+                "ctr_pt_position"
+            ]
+            df[net_size_col] = (
+                df[[merge_column, "size"]]
+                .groupby(merge_column)
+                .transform("sum")["size"]
+            )
+            df[mean_size_col] = (
+                df[[merge_column, "size"]]
+                .groupby(merge_column)
+                .transform("mean")["size"]
+            ).astype(int)
         df_unique = df.drop_duplicates(subset=merge_column).drop(
             columns=["size", "ctr_pt_position"]
         )
@@ -275,7 +301,7 @@ class NeuronData(object):
         )  # Dash can't handle int64
         return tab_dat
 
-    @lru_cache
+    @lru_cache(maxsize=5)
     def pre_tab_dat(self) -> pd.DataFrame:
         return (
             self._compute_tab_dat("pre")
@@ -284,7 +310,7 @@ class NeuronData(object):
             .rename(columns={"post_pt_root_id": "pt_root_id"})
         )
 
-    @lru_cache
+    @lru_cache(maxsize=5)
     def post_tab_dat(self) -> pd.DataFrame:
         return (
             self._compute_tab_dat("post")

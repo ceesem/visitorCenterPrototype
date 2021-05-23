@@ -52,22 +52,35 @@ def radial_distance(row, colx, coly, voxel_resolution):
         return np.linalg.norm(voxel_resolution[rad_inds] * delv[rad_inds]) / 1000
 
 
-def get_specific_soma(soma_table, root_id, client, timestamp):
-    soma_df = client.materialize.live_query(
-        soma_table,
-        filter_equal_dict={"pt_root_id": root_id},
-        timestamp=timestamp,
-    )
+def get_specific_soma(soma_table, root_id, client, timestamp, live_query=True):
+    if live_query:
+        soma_df = client.materialize.live_query(
+            soma_table,
+            filter_equal_dict={"pt_root_id": root_id},
+            timestamp=timestamp,
+        )
+    else:
+        soma_df = client.materialize.query_table(
+            soma_table,
+            filter_equal_dict={"pt_root_id": root_id},
+        )
     return soma_df
 
 
-def get_soma_df(soma_table, root_ids, client, timestamp):
-    soma_df = client.materialize.live_query(
-        soma_table,
-        filter_in_dict={"pt_root_id": root_ids},
-        timestamp=timestamp,
-        split_positions=True,
-    )
+def get_soma_df(soma_table, root_ids, client, timestamp, live_query=True):
+    if live_query:
+        soma_df = client.materialize.live_query(
+            soma_table,
+            filter_in_dict={"pt_root_id": root_ids},
+            timestamp=timestamp,
+            split_positions=True,
+        )
+    else:
+        soma_df = client.materialize.query_table(
+            soma_table,
+            filter_in_dict={"pt_root_id": root_ids},
+            split_positions=True,
+        )
 
     soma_df[num_soma_col] = (
         soma_df.query(soma_table_query)
@@ -87,13 +100,21 @@ def get_soma_df(soma_table, root_ids, client, timestamp):
     return soma_df[soma_table_columns]
 
 
-def get_ct_df(cell_type_table, root_ids, client, timestamp):
-    ct_df = client.materialize.live_query(
-        cell_type_table,
-        filter_in_dict={"pt_root_id": root_ids},
-        timestamp=timestamp,
-        split_positions=True,
-    )
+def get_ct_df(cell_type_table, root_ids, client, timestamp, live_query=True):
+    if live_query:
+        ct_df = client.materialize.live_query(
+            cell_type_table,
+            filter_in_dict={"pt_root_id": root_ids},
+            timestamp=timestamp,
+            split_positions=True,
+        )
+    else:
+        ct_df = client.materialize.query_table(
+            cell_type_table,
+            filter_in_dict={"pt_root_id": root_ids},
+            split_positions=True,
+        )
+
     if len(ct_df) == 0:
         ct_df["pt_position"] = []
     else:
@@ -132,10 +153,24 @@ def _multirun_get_ct_soma(
     return soma_df, ct_df
 
 
-def cell_typed_soma_df(soma_table, cell_type_table, root_ids, client, timestamp):
-    soma_df, ct_df = _multirun_get_ct_soma(
-        soma_table, cell_type_table, root_ids, client, timestamp
-    )
+def _static_get_ct_soma(soma_table, cell_type_table, root_ids, client):
+    with ThreadPoolExecutor(2) as exe:
+        soma_out = exe.submit(get_soma_df, soma_table, root_ids, client)
+        ct_out = exe.submit(get_ct_df, cell_type_table, root_ids, client)
+    return soma_out.result(), ct_out.result()
+
+
+def cell_typed_soma_df(
+    soma_table, cell_type_table, root_ids, client, timestamp, live_query=True
+):
+    if live_query:
+        soma_df, ct_df = _multirun_get_ct_soma(
+            soma_table, cell_type_table, root_ids, client, timestamp
+        )
+    else:
+        soma_df, ct_df = _static_get_ct_soma(
+            soma_table, cell_type_table, root_ids, client
+        )
 
     soma_ct_df = ct_df.merge(
         soma_df.drop_duplicates(subset="pt_root_id"), on="pt_root_id"
@@ -148,39 +183,76 @@ def cell_typed_soma_df(soma_table, cell_type_table, root_ids, client, timestamp)
 
 
 def _synapse_df(
-    direction, synapse_table, root_id, client, timestamp, exclude_autapses=True
+    direction,
+    synapse_table,
+    root_id,
+    client,
+    timestamp,
+    live_query=True,
+    exclude_autapses=True,
 ):
-    syn_df = client.materialize.live_query(
-        synapse_table,
-        filter_equal_dict={f"{direction}_pt_root_id": root_id},
-        timestamp=timestamp,
-        split_positions=True,
-    )
+    if live_query:
+        syn_df = client.materialize.live_query(
+            synapse_table,
+            filter_equal_dict={f"{direction}_pt_root_id": root_id},
+            timestamp=timestamp,
+            split_positions=True,
+        )
+    else:
+        syn_df = client.materialize.query_table(
+            synapse_table,
+            filter_equal_dict={f"{direction}_pt_root_id": root_id},
+            split_positions=True,
+        )
+
     if exclude_autapses:
         syn_df = syn_df.query("pre_pt_root_id != post_pt_root_id").reset_index(
             drop=True
         )
-    syn_df["ctr_pt_position"] = syn_df.apply(
-        lambda x: assemble_pt_position(x, "ctr_"), axis=1
-    )
-    syn_df[syn_depth_col] = syn_df["ctr_pt_position_y"].apply(
-        lambda x: voxel_resolution[1] * x / 1000
-    )
+
+    if len(syn_df) == 0:
+        syn_df["ctr_pt_position"] = []
+        syn_df[syn_depth_col] = []
+    else:
+        syn_df["ctr_pt_position"] = syn_df.apply(
+            lambda x: assemble_pt_position(x, "ctr_"), axis=1
+        )
+        syn_df[syn_depth_col] = syn_df["ctr_pt_position_y"].apply(
+            lambda x: voxel_resolution[1] * x / 1000
+        )
     return syn_df[synapse_table_columns]
 
 
-def pre_synapse_df(synapse_table, root_id, client, timestamp):
-    return _synapse_df("pre", synapse_table, root_id, client, timestamp)
+def pre_synapse_df(synapse_table, root_id, client, timestamp, live_query=True):
+    return _synapse_df(
+        "pre", synapse_table, root_id, client, timestamp, live_query=live_query
+    )
 
 
-def post_synapse_df(synapse_table, root_id, client, timestamp):
-    return _synapse_df("post", synapse_table, root_id, client, timestamp)
+def post_synapse_df(synapse_table, root_id, client, timestamp, live_query=True):
+    return _synapse_df(
+        "post", synapse_table, root_id, client, timestamp, live_query=live_query
+    )
 
 
-def synapse_data(synapse_table, root_id, client, timestamp):
+def synapse_data(synapse_table, root_id, client, timestamp, live_query=True):
     with ThreadPoolExecutor(2) as exe:
-        pre = exe.submit(pre_synapse_df, synapse_table, root_id, client, timestamp)
-        post = exe.submit(post_synapse_df, synapse_table, root_id, client, timestamp)
+        pre = exe.submit(
+            pre_synapse_df,
+            synapse_table,
+            root_id,
+            client,
+            timestamp,
+            live_query=live_query,
+        )
+        post = exe.submit(
+            post_synapse_df,
+            synapse_table,
+            root_id,
+            client,
+            timestamp,
+            live_query=live_query,
+        )
     return pre.result(), post.result()
 
 
