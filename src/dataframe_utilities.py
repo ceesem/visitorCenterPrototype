@@ -130,21 +130,25 @@ def _multirun_get_ct_soma(
 ):
     if n_split is None:
         n_split = min(max(len(root_ids) // TARGET_ROOT_ID_PER_CALL, 1), MAX_CHUNKS)
-    root_ids_split = np.array_split(root_ids, n_split)
-    out_soma = []
-    out_ct = []
-    with ThreadPoolExecutor(max_workers=(2 * n_split)) as exe:
-        out_soma = [
-            exe.submit(get_soma_df, soma_table, rid, client, timestamp)
-            for rid in root_ids_split
-        ]
-        out_ct = [
-            exe.submit(get_ct_df, cell_type_table, rid, client, timestamp)
-            for rid in root_ids_split
-        ]
+    if len(root_ids) == 0:
+        soma_df = get_soma_df(soma_table, [], client, timestamp, live_query=False)
+        ct_df = get_ct_df(cell_type_table, [], client, timestamp, live_query=False)
+    else:
+        root_ids_split = np.array_split(root_ids, n_split)
+        out_soma = []
+        out_ct = []
+        with ThreadPoolExecutor(max_workers=(2 * n_split)) as exe:
+            out_soma = [
+                exe.submit(get_soma_df, soma_table, rid, client, timestamp)
+                for rid in root_ids_split
+            ]
+            out_ct = [
+                exe.submit(get_ct_df, cell_type_table, rid, client, timestamp)
+                for rid in root_ids_split
+            ]
 
-    soma_df = pd.concat([out.result() for out in out_soma])
-    ct_df = pd.concat([out.result() for out in out_ct])
+        soma_df = pd.concat([out.result() for out in out_soma])
+        ct_df = pd.concat([out.result() for out in out_ct])
 
     client.materialize.session.close()
     client.materialize.cg_client.session.close()
